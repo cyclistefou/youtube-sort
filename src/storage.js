@@ -28,3 +28,10 @@ async function getCachedMetadata(tabId) {
     const cachedData = await browser.storage.local.get('youtubeMetadata');
     return cachedData.youtubeMetadata ? cachedData.youtubeMetadata[tabId] : null;
 }
+
+// Using sync storage to sync data across devices
+async function cacheMetadataSync(tabId, metadata) {
+    const cachedData = await browser.storage.sync.get('youtubeMetadata') || {};
+    cachedData[tabId] = metadata;
+    await browser.storage.sync.set({ youtubeMetadata: cachedData });
+}

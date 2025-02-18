@@ -5,6 +5,38 @@ console.debug("[YouTube Sort] Content File loaded.");
 let observerActive = false;
 let foundSponsorBlock = false;
 
+/** returns views as a string */
+function getViews(views) {
+  const SI_SYMBOL = ["", "K", "M", "B", "T"];
+  const tier = (Math.log10(Math.abs(views)) / 3) | 0;
+  if (tier === 0) return views.toString();
+  const divisor = Math.pow(10, tier * 3);
+  return (views / divisor).toFixed(1) + SI_SYMBOL[tier];
+}
+
+/** returns relative premiere time */
+function getPremiereTime(timestamp) {
+  const today = new Date();
+  const premiere = new Date(timestamp);
+  const diff = premiere - today;
+  return getDuration(diff / 1000);
+}
+
+/** returns duration as a string */
+function getDuration(seconds) {
+  const days = Math.floor(seconds / 86400); // 86400 seconds in a day
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+
+  const formattedDays = days ? String(days).padStart(2, "0") + ":" : "";
+  const formattedHours = hours ? String(hours).padStart(2, "0") + ":" : "";
+  const formattedMinutes = String(minutes).padStart(2, "0");
+  const formattedSeconds = String(remainingSeconds).padStart(2, "0");
+
+  return `${formattedDays}${formattedHours}${formattedMinutes}:${formattedSeconds}`;
+}
+
 /**
  * Converts a given ISO 8601 duration string (in the format PTnHnMnS) into seconds.
  * Returns 0 if no valid input was found.
@@ -28,6 +60,44 @@ function calcDuration(duration) {
   }
 
   return totalseconds;
+}
+
+async function getVideoTimeCode(tabId) {
+  const tab = await browser.tabs.get(tabId);
+  const url = new URL(tab.url);
+
+  if (url.hostname.includes('youtube.com')) {
+    const timeCode = await browser.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const player = document.querySelector('video'); // Get the video element
+        if (player) {
+          return player.currentTime; // Return current time in seconds
+        }
+        return null;
+      }
+    });
+
+    return timeCode[0].result; // Return the result from the content script
+  }
+  return null; // Return null if not a YouTube tab
+}
+
+function convertTimeFormat(timeString) {
+  // Regular expression to capture hours (optional), minutes, and seconds
+  const regex = /\((?:(\d+):)?(\d+):(\d+)\)/;
+  const match = timeString.match(regex);
+  if (!match) return timeString; // If the string doesn't match the pattern, return it as is.
+  const [, hours, minutes, seconds] = match;
+  let result = "PT";
+  if (hours) {
+    result += `${hours}H`;
+    result += `${minutes}M${seconds}S`;
+  } else {
+    result += `${minutes}M${seconds}S`;
+  }
+
+  return result;
 }
 
 function fetchVideoData(observer) {
@@ -63,23 +133,6 @@ function fetchVideoData(observer) {
 
   const tabUrl = window.location.href;
   const isLive = publication && !endDate;
-
-  function convertTimeFormat(timeString) {
-    // Regular expression to capture hours (optional), minutes, and seconds
-    const regex = /\((?:(\d+):)?(\d+):(\d+)\)/;
-    const match = timeString.match(regex);
-    if (!match) return timeString; // If the string doesn't match the pattern, return it as is.
-    const [, hours, minutes, seconds] = match;
-    let result = "PT";
-    if (hours) {
-      result += `${hours}H`;
-      result += `${minutes}M${seconds}S`;
-    } else {
-      result += `${minutes}M${seconds}S`;
-    }
-
-    return result;
-  }
 
   // saves data with video id as key
   if (videoID) {
